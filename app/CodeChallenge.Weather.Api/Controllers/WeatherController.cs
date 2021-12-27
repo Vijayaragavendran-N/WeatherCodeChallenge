@@ -1,9 +1,16 @@
 ﻿namespace CodeChallenge.Weather.Api.Controllers
 {
     using CodeChallenge.Weather.Api.Model;
+    using CodeChallenge.Weather.Domain;
+    using CodeChallenge.Weather.Domain.Service;
+    using CodeChallenge.Weather.Infrastructure.EntityFramework;
+    using CodeChallenge.Weather.Infrastructure.OpenWeatherMap;
     using Microsoft.AspNetCore.Http;
     using Microsoft.AspNetCore.Mvc;
     using Microsoft.Extensions.Logging;
+    using System;
+    using System.Linq;
+    using System.Threading.Tasks;
 
     /// <summary>
     /// Weather API v1
@@ -13,14 +20,15 @@
     public class WeatherController : ControllerBase
     {
         private readonly ILogger<WeatherController> _logger;
-
+        private readonly WeatherContext _weatherContext;
         /// <summary>
         /// Constructor of weather controller
         /// </summary>
         /// <param name="logger"></param>
-        public WeatherController(ILogger<WeatherController> logger)
+        public WeatherController(ILogger<WeatherController> logger, WeatherContext weatherContext)
         {
             _logger = logger;
+            _weatherContext = weatherContext;
         }
 
         /// <summary>
@@ -47,8 +55,24 @@
             // - Get the weather from IWeatherRepository
             // - Returns good weather or bad weather
             //   If is bad weather returns the reason of that, indicate the sensor(s) (rain, snow, wind, etc)
-
-            return NotFound($"{city} not exists!");
+            try
+            {
+                string description = string.Empty;
+                WeatherDetectorService weatherDetectorService = new WeatherDetectorService();
+                var guid = _weatherContext.Weather.Where(x => x.CityName.ToLower() == city.ToLower()).Select(x => x.Id).ToList();
+                if (guid.Count > 0)
+                {
+                    Weather result = weatherDetectorService.FindById(guid[0]);
+                    description = result.Description.ToString().ToLower() != "clear" ? "Bad weather in " + city + " as it is " + result.Description.ToString().ToLower()
+                                                                                      : "Weather is good in " + city + " as it is " + result.Description.ToString().ToLower();
+                }
+                return description != string.Empty ? Ok(description) : NotFound(city + " is not found");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogInformation(ex.Message);
+                return StatusCode(StatusCodes.Status500InternalServerError, "Error Occured!");
+            }
         }
 
         /// <summary>
@@ -77,15 +101,36 @@
         [ProducesResponseType(StatusCodes.Status406NotAcceptable)]
         [ProducesResponseType(StatusCodes.Status409Conflict)]
 
-        public IActionResult Post([FromBody] WeatherCity weatherCity)
+        public async Task<IActionResult> PostAsync([FromBody] WeatherCity weatherCity) 
         {
             // TODO: The candidate must implement here
             // - Call the OpenWeatherMap API with the city from body
             // - Call WeatherDetectorService and store the results together with the sensors 
             // - Store the data in the repository IWeatherRepository
-
-            return StatusCode(StatusCodes.Status406NotAcceptable,
-                              $"The petition to store the weather for {weatherCity.City} has not been processed!");
+            try
+            {
+                if (weatherCity.City != null)
+                {
+                    if(weatherCity.City == "")
+                    {
+                        return StatusCode(StatusCodes.Status406NotAcceptable,
+                                      "City name is empty!");
+                    }
+                    WeatherClient weatherclient = new WeatherClient();                    
+                    Domain.Weather weatherResponse = await weatherclient.GetWeatherAsync(weatherCity.City);
+                    return weatherResponse.CityName == null ? StatusCode(StatusCodes.Status406NotAcceptable,
+                                      $"The petition to store the weather for {weatherCity.City} has not been processed because it is not found, please name it correctly!") :
+                                      StatusCode(StatusCodes.Status201Created,
+                                      $"The petition to store the weather for {weatherCity.City} has been processed!");
+                }
+                return StatusCode(StatusCodes.Status406NotAcceptable,
+                                      "Could not find the 'city' property!");
+            }
+            catch(Exception ex)
+            {
+                _logger.LogInformation(ex.Message);
+                return StatusCode(StatusCodes.Status500InternalServerError, "Error Occured!");
+            }
         }
     }
 }

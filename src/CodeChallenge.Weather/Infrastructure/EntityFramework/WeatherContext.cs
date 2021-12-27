@@ -18,10 +18,14 @@
 #pragma warning restore CS8618 // Non-nullable field is uninitialized. Consider declaring as nullable.
         {
         }
-
+      
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
-            // Do nothing because of X and Y.            
+            // Do nothing because of X and Y.
+            if (!optionsBuilder.IsConfigured)
+            {
+                optionsBuilder.UseInMemoryDatabase(databaseName: "Weather");
+            }
         }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)

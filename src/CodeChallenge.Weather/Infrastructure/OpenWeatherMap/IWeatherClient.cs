@@ -5,6 +5,6 @@
 
     public interface IWeatherClient
     {
-        Task<WeatherResponse> GetWeatherAsync(string city);
+        Task<Domain.Weather> GetWeatherAsync(string city);
     }
 }
